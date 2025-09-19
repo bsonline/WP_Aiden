@@ -20,6 +20,155 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 /**
+ * Register settings and fields for the AiDen settings page.
+ */
+function aipc_register_settings() {
+    // Register the setting for the AI Group Leader
+    register_setting(
+        'aiden_general_settings',
+        'ai_group_leader_user_id',
+        array(
+            'type'              => 'integer',
+            'sanitize_callback' => 'absint',
+            'default'           => 0,
+        )
+    );
+
+    // Add a section to the 'General' tab
+    add_settings_section(
+        'aiden_general_section',
+        __( 'Core Settings', 'ai-persona-core' ),
+        'aipc_render_general_section_callback',
+        'aiden-settings-general'
+    );
+
+    // Add the field for selecting the Group Leader
+    add_settings_field(
+        'ai_group_leader_user_id_field',
+        __( 'AI Group Leader', 'ai-persona-core' ),
+        'aipc_render_leader_select_field',
+        'aiden-settings-general',
+        'aiden_general_section'
+    );
+}
+add_action( 'admin_init', 'aipc_register_settings' );
+
+/**
+ * Callback function to render the introductory text for the general settings section.
+ */
+function aipc_render_general_section_callback() {
+    echo '<p>' . esc_html__( 'These are the main settings for the AiDen suite. Designating a Group Leader is required to enable autonomous agent posting.', 'ai-persona-core' ) . '</p>';
+}
+
+/**
+ * Callback function to render the dropdown select field for the AI Group Leader.
+ */
+function aipc_render_leader_select_field() {
+    $current_leader_id = get_option( 'ai_group_leader_user_id', 0 );
+    $all_users = get_users();
+    ?>
+    <select name="ai_group_leader_user_id" id="ai_group_leader_user_id" class="postform">
+        <option value="0" <?php selected( $current_leader_id, 0 ); ?>><?php esc_html_e( '— None (Autonomous Posting Disabled) —', 'ai-persona-core' ); ?></option>
+        <?php foreach ( $all_users as $user ) : ?>
+            <option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $current_leader_id, $user->ID ); ?>>
+                <?php echo esc_html( $user->display_name ); ?> (<?php echo esc_html( $user->user_login ); ?>)
+            </option>
+        <?php endforeach; ?>
+    </select>
+    <p class="description">
+        <?php esc_html_e( 'Select the user account that will act as the AI Group Leader. The leader arbitrates which agent gets to respond to a trigger.', 'ai-persona-core' ); ?>
+    </p>
+    <?php
+}
+
+/**
+ * ===================================================================
+ * Persona Assignment on User Profile
+ * ===================================================================
+ */
+
+/**
+ * Display the UI for assigning personas on the user profile edit screen.
+ *
+ * @param WP_User $user The user object being edited.
+ */
+function aipc_show_persona_assignment_ui( $user ) {
+    // A security check to ensure the current user can edit the target user.
+    if ( ! current_user_can( 'edit_user', $user->ID ) ) {
+        return;
+    }
+
+    $all_personas = get_posts( array(
+        'post_type'      => 'ai_persona',
+        'posts_per_page' => -1,
+        'post_status'    => 'publish',
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ) );
+
+    // Don't show the section if there are no personas to assign.
+    if ( empty( $all_personas ) ) {
+        return;
+    }
+
+    $assigned_persona_ids = get_user_meta( $user->ID, '_assigned_personas', true );
+    if ( ! is_array( $assigned_persona_ids ) ) {
+        $assigned_persona_ids = array();
+    }
+    ?>
+    <h2><?php esc_html_e( 'AiDen Personas', 'ai-persona-core' ); ?></h2>
+    <table class="form-table" role="presentation">
+        <tr>
+            <th><label for="assigned_personas"><?php esc_html_e( 'Assigned Personas', 'ai-persona-core' ); ?></label></th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span><?php esc_html_e( 'Assigned Personas', 'ai-persona-core' ); ?></span></legend>
+                    <?php foreach ( $all_personas as $persona ) : ?>
+                        <label for="persona-<?php echo esc_attr( $persona->ID ); ?>">
+                            <input
+                                type="checkbox"
+                                name="assigned_personas[]"
+                                id="persona-<?php echo esc_attr( $persona->ID ); ?>"
+                                value="<?php echo esc_attr( $persona->ID ); ?>"
+                                <?php checked( in_array( $persona->ID, $assigned_persona_ids ) ); ?>
+                            />
+                            <?php echo esc_html( $persona->post_title ); ?>
+                        </label><br />
+                    <?php endforeach; ?>
+                </fieldset>
+                <p class="description"><?php esc_html_e( 'Assign one or more personas to this user. This determines the agent\'s behavioral archetypes.', 'ai-persona-core' ); ?></p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+add_action( 'show_user_profile', 'aipc_show_persona_assignment_ui' );
+add_action( 'edit_user_profile', 'aipc_show_persona_assignment_ui' );
+
+/**
+ * Save the assigned persona data when a user profile is updated.
+ *
+ * @param int $user_id The ID of the user being updated.
+ */
+function aipc_save_persona_assignment( $user_id ) {
+    // Security check to ensure the current user has the necessary permissions.
+    if ( ! current_user_can( 'edit_user', $user_id ) ) {
+        return;
+    }
+
+    if ( isset( $_POST['assigned_personas'] ) && is_array( $_POST['assigned_personas'] ) ) {
+        // Sanitize the input to ensure we only have an array of integers.
+        $sanitized_personas = array_map( 'absint', $_POST['assigned_personas'] );
+        update_user_meta( $user_id, '_assigned_personas', $sanitized_personas );
+    } else {
+        // If no personas were checked, this means we should remove all assignments.
+        delete_user_meta( $user_id, '_assigned_personas' );
+    }
+}
+add_action( 'personal_options_update', 'aipc_save_persona_assignment' );
+add_action( 'edit_user_profile_update', 'aipc_save_persona_assignment' );
+
+/**
  * Register the 'ai_persona' custom post type.
  */
 function aipc_register_persona_post_type() {
@@ -132,3 +281,63 @@ function aipc_register_taxonomies() {
     register_taxonomy( 'persona_interest', 'ai_persona', $interest_args );
 }
 add_action( 'init', 'aipc_register_taxonomies' );
+
+/**
+ * ===================================================================
+ * AiDen Suite Settings Page
+ * ===================================================================
+ */
+
+/**
+ * Register the main AiDen admin menu page.
+ */
+function aipc_add_admin_menu() {
+    add_menu_page(
+        __( 'AiDen Settings', 'ai-persona-core' ),
+        __( 'AiDen', 'ai-persona-core' ),
+        'manage_options',
+        'aiden-settings',
+        'aipc_render_settings_page',
+        'dashicons-brain', // A fitting icon for an AI suite
+        25 // Position in the menu
+    );
+}
+add_action( 'admin_menu', 'aipc_add_admin_menu' );
+
+/**
+ * Render the HTML for the AiDen settings page, including tab navigation.
+ */
+function aipc_render_settings_page() {
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e( 'AiDen Suite Settings', 'ai-persona-core' ); ?></h1>
+        <p><?php esc_html_e( 'Welcome to the control panel for your autonomous AI agent ecosystem.', 'ai-persona-core' ); ?></p>
+
+        <?php
+        // Basic tab navigation
+        $active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general_settings';
+        ?>
+
+        <h2 class="nav-tab-wrapper">
+            <a href="?page=aiden-settings&tab=general_settings" class="nav-tab <?php echo $active_tab == 'general_settings' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'General', 'ai-persona-core' ); ?></a>
+            <a href="?page=aiden-settings&tab=triggers" class="nav-tab <?php echo $active_tab == 'triggers' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'Triggers & Reactions', 'ai-persona-core' ); ?></a>
+        </h2>
+
+        <form action="options.php" method="post">
+            <?php
+            if ( $active_tab == 'general_settings' ) {
+                settings_fields( 'aiden_general_settings' );
+                do_settings_sections( 'aiden-settings-general' );
+            } elseif ( $active_tab == 'triggers' ) {
+                settings_fields( 'aiden_trigger_settings' );
+                do_settings_sections( 'aiden-settings-triggers' );
+            }
+
+            // Only show the submit button on tabs that have settings.
+            // In the future, we can add more complex conditions here.
+            submit_button( 'Save Settings' );
+            ?>
+        </form>
+    </div>
+    <?php
+}
