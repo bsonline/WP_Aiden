@@ -20,34 +20,6 @@ if ( ! defined( 'WPINC' ) ) {
 }
 
 /**
- * Creates the custom database table for the reaction queue upon plugin activation.
- */
-function trm_create_reaction_queue_table() {
-    global $wpdb;
-    $table_name = $wpdb->prefix . 'ai_reaction_queue';
-    $charset_collate = $wpdb->get_charset_collate();
-
-    $sql = "CREATE TABLE {$table_name} (
-        queue_id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        user_id bigint(20) UNSIGNED NOT NULL,
-        trigger_post_id bigint(20) UNSIGNED NOT NULL,
-        trigger_comment_id bigint(20) UNSIGNED DEFAULT 0 NOT NULL,
-        suggested_content text NOT NULL,
-        status varchar(20) DEFAULT 'pending' NOT NULL,
-        created_at datetime NOT NULL,
-        updated_at datetime NOT NULL,
-        PRIMARY KEY  (queue_id),
-        KEY user_id (user_id),
-        KEY status (status)
-    ) {$charset_collate};";
-
-    // We need to load the upgrade file to use dbDelta.
-    require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
-    dbDelta( $sql );
-}
-register_activation_hook( __FILE__, 'trm_create_reaction_queue_table' );
-
-/**
  * Handles the trigger when a new comment is posted.
  *
  * Instead of posting a comment, this function now generates a reaction
@@ -308,19 +280,24 @@ add_action( 'save_post', 'trm_handle_manual_trigger_on_save' );
 /**
  * A one-time setup function to create a rich set of demo data.
  *
- * To run this, visit your WordPress site's front-end with `?setup_ai_demo=true`
- * in the URL. It is designed to only run once successfully.
+ * This function is triggered by a button on the AiDen Dashboard.
  */
 function trm_setup_demo_data() {
-    if ( ! isset( $_GET['setup_ai_demo'] ) ) {
+    // Check if the form was submitted and the nonce is valid.
+    if ( ! isset( $_POST['aiden_action'] ) || $_POST['aiden_action'] !== 'setup_demo_data' ) {
+        return;
+    }
+    check_admin_referer( 'aiden_setup_demo_data_nonce' );
+
+    // Safety check: Don't run if the core persona post type isn't registered.
+    if ( ! post_type_exists( 'ai_persona' ) ) {
+        // In a real plugin, we'd add an admin notice. For now, this is fine.
         return;
     }
 
     if ( get_transient( 'trm_demo_data_setup_complete' ) ) {
-        wp_die( 'Rich AI demo data has already been set up.' );
+        return;
     }
-
-    $output = '<h1>AiDen Rich Demo Data Setup</h1>';
 
     // --- Data Definitions ---
     $demo_personas = [
@@ -357,7 +334,6 @@ function trm_setup_demo_data() {
     $persona_name_to_id = [];
 
     // --- 1. Create Personas and Taxonomy Terms ---
-    $output .= '<h2>Creating Personas...</h2>';
     foreach ( $demo_personas as $title => $data ) {
         $persona_post = get_page_by_title( $title, OBJECT, 'ai_persona' );
         if ( ! $persona_post ) {
@@ -370,31 +346,25 @@ function trm_setup_demo_data() {
             $persona_name_to_id[$title] = $persona_id;
             wp_set_object_terms($persona_id, $data['traits'], 'persona_trait', false);
             wp_set_object_terms($persona_id, $data['interests'], 'persona_interest', false);
-            $output .= "Created persona: {$title}<br>";
         } else {
             $persona_name_to_id[$title] = $persona_post->ID;
-            $output .= "Persona already exists: {$title}<br>";
         }
     }
 
     // --- 2. Create Agent Users ---
-    $output .= '<h2>Creating Agent Users...</h2>';
     $agent_name_to_id = [];
     foreach ( $demo_agents as $name => $data ) {
         if ( ! username_exists( $name ) ) {
             $user_id = wp_create_user( $name, wp_generate_password(), strtolower($name) . '@persona.local' );
             wp_update_user(['ID' => $user_id, 'display_name' => $name]);
             $agent_name_to_id[$name] = $user_id;
-            $output .= "Created user: {$name}<br>";
         } else {
             $user = get_user_by('login', $name);
             $agent_name_to_id[$name] = $user->ID;
-            $output .= "User already exists: {$name}<br>";
         }
     }
 
     // --- 3. Link Personas to Users ---
-    $output .= '<h2>Assigning Personas to Users...</h2>';
     foreach ( $demo_agents as $name => $data ) {
         $user_id = $agent_name_to_id[$name];
         $persona_ids_to_assign = [];
@@ -404,18 +374,17 @@ function trm_setup_demo_data() {
             }
         }
         update_user_meta($user_id, '_assigned_personas', $persona_ids_to_assign);
-        $output .= "Assigned " . implode(', ', $data['personas']) . " to {$name}<br>";
     }
 
     // --- 4. Designate a leader ---
-    $output .= '<h2>Designating Leader...</h2>';
     $leader_id = $agent_name_to_id['Ben'];
     update_option( 'ai_group_leader_user_id', $leader_id );
-    $output .= "Set Ben as the AI Group Leader.<br>";
 
-    // --- 5. Mark setup as complete ---
+    // --- 5. Mark setup as complete and redirect ---
     set_transient( 'trm_demo_data_setup_complete', true, YEAR_IN_SECONDS );
-    $output .= '<h2>Setup Complete!</h2>';
-    wp_die( $output );
+
+    // Redirect back to the dashboard with a success notice.
+    wp_safe_redirect( admin_url( 'admin.php?page=aiden-settings&setup_status=success' ) );
+    exit;
 }
-add_action( 'init', 'trm_setup_demo_data' );
+add_action( 'init', 'trm_setup_demo_data', 20 );

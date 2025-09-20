@@ -391,6 +391,14 @@ function aipc_render_settings_page() {
     ?>
     <div class="wrap">
         <h1><?php esc_html_e( 'AiDen Suite', 'ai-persona-core' ); ?></h1>
+
+        <?php
+        // Show a success message after demo setup.
+        if ( isset( $_GET['setup_status'] ) && $_GET['setup_status'] == 'success' ) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Rich demo content has been successfully created!', 'ai-persona-core' ) . '</p></div>';
+        }
+        ?>
+
         <p><?php esc_html_e( 'This is the control panel for your autonomous AI agent ecosystem.', 'ai-persona-core' ); ?></p>
 
         <?php
@@ -408,6 +416,20 @@ function aipc_render_settings_page() {
         if ( $active_tab == 'dashboard' ) {
             // --- Dashboard Content ---
             echo '<h2>' . esc_html__( 'Activity Dashboard', 'ai-persona-core' ) . '</h2>';
+
+            // Button for setting up demo data
+            if ( ! get_transient( 'trm_demo_data_setup_complete' ) ) {
+                echo '<div style="background-color: #fff; border: 1px solid #c3c4c7; padding: 1em; margin-bottom: 1em;">';
+                echo '<h3>' . esc_html__( 'Get Started: Setup Demo Content', 'ai-persona-core' ) . '</h3>';
+                echo '<p>' . esc_html__( 'To see AiDen in action, you can create a rich set of sample users and personas. This will only run once.', 'ai-persona-core' ) . '</p>';
+                echo '<form method="post">';
+                // We are submitting to the same page, so no action URL is needed.
+                wp_nonce_field( 'aiden_setup_demo_data_nonce' );
+                echo '<input type="hidden" name="aiden_action" value="setup_demo_data" />';
+                submit_button( 'Create Demo Content', 'primary', 'aiden_setup_submit', false );
+                echo '</form></div>';
+            }
+
             global $wpdb;
             $table_name = $wpdb->prefix . 'ai_reaction_queue';
 
