@@ -306,71 +306,116 @@ function trm_handle_manual_trigger_on_save( $post_id ) {
 add_action( 'save_post', 'trm_handle_manual_trigger_on_save' );
 
 /**
- * A one-time setup function to create demo data for the AI agent system.
- *
- * This function is for demonstration purposes only, as there is no UI to
- * create users, personas, and link them. It makes the system testable.
+ * A one-time setup function to create a rich set of demo data.
  *
  * To run this, visit your WordPress site's front-end with `?setup_ai_demo=true`
  * in the URL. It is designed to only run once successfully.
  */
 function trm_setup_demo_data() {
-    // Only run when specifically requested via URL query.
     if ( ! isset( $_GET['setup_ai_demo'] ) ) {
         return;
     }
 
-    // Use a transient to ensure this heavy operation only runs once.
     if ( get_transient( 'trm_demo_data_setup_complete' ) ) {
-        wp_die( 'AI demo data has already been set up. To run again, delete the transient \'trm_demo_data_setup_complete\'.' );
+        wp_die( 'Rich AI demo data has already been set up.' );
     }
 
-    // --- 1. Create a sample Persona Post ---
-    $persona_post_title = 'Shared Persona';
-    $persona_post = get_page_by_title( $persona_post_title, OBJECT, 'ai_persona' );
-    if ( ! $persona_post ) {
-        $persona_id = wp_insert_post( array(
-            'post_title'   => $persona_post_title,
-            'post_content' => 'This is a generic persona shared by multiple agents.',
-            'post_type'    => 'ai_persona',
-            'post_status'  => 'publish',
-        ) );
-    } else {
-        $persona_id = $persona_post->ID;
-    }
+    $output = '<h1>AiDen Rich Demo Data Setup</h1>';
 
-    if ( ! $persona_id || is_wp_error( $persona_id ) ) {
-        wp_die( 'Error: Could not create the sample persona post.' );
-    }
+    // --- Data Definitions ---
+    $demo_personas = [
+        'The Gamer' => [
+            'description' => 'Focused on video games, esports, and streaming culture. Often uses slang and is highly competitive.',
+            'traits' => ['Competitive', 'Witty', 'Tech-savvy', 'Casual'],
+            'interests' => ['Gaming/Video Games', 'Technology/Computers', 'Entertainment/Streaming'],
+        ],
+        'The Stoic Philosopher' => [
+            'description' => 'Calm, rational, and speaks in measured tones. Often quotes ancient philosophers and focuses on virtue and logic.',
+            'traits' => ['Calm', 'Analytical', 'Formal', 'Wise'],
+            'interests' => ['Philosophy', 'History', 'Psychology', 'Reading'],
+        ],
+        'The Enthusiastic Chef' => [
+            'description' => 'Loves all things food. Expressive, uses sensory language, and is always eager to share recipes or talk about restaurants.',
+            'traits' => ['Enthusiastic', 'Creative', 'Sensory', 'Helpful'],
+            'interests' => ['Food & Drink/Cooking', 'Travel', 'Art/Culture'],
+        ],
+        'The Cynical Artist' => [
+            'description' => 'A starving artist archetype. Sarcastic, world-weary, and critical of mainstream culture, but passionate about true art.',
+            'traits' => ['Sarcastic', 'Creative', 'Critical', 'Passionate'],
+            'interests' => ['Art/Culture', 'Music', 'Literature', 'Philosophy'],
+        ],
+    ];
 
-    // --- 2. Create Agent Users ---
-    $agent_users = array( 'AIAgent_Bob', 'AIAgent_Carl' );
-    $user_ids = array();
-    foreach ( $agent_users as $username ) {
-        if ( ! username_exists( $username ) ) {
-            $password = wp_generate_password();
-            $user_id = wp_create_user( $username, $password, strtolower( $username ) . '@persona.local' );
-            $user_ids[ $username ] = $user_id;
+    $demo_agents = [
+        'Alex' => ['personas' => ['The Gamer']],
+        'Ben' => ['personas' => ['The Stoic Philosopher', 'The Cynical Artist']],
+        'Chloe' => ['personas' => ['The Enthusiastic Chef']],
+        'David' => ['personas' => ['The Gamer', 'The Enthusiastic Chef']],
+        'Eleanor' => ['personas' => ['The Cynical Artist']],
+    ];
+
+    $persona_name_to_id = [];
+
+    // --- 1. Create Personas and Taxonomy Terms ---
+    $output .= '<h2>Creating Personas...</h2>';
+    foreach ( $demo_personas as $title => $data ) {
+        $persona_post = get_page_by_title( $title, OBJECT, 'ai_persona' );
+        if ( ! $persona_post ) {
+            $persona_id = wp_insert_post([
+                'post_title' => $title,
+                'post_content' => $data['description'],
+                'post_type' => 'ai_persona',
+                'post_status' => 'publish',
+            ]);
+            $persona_name_to_id[$title] = $persona_id;
+            wp_set_object_terms($persona_id, $data['traits'], 'persona_trait', false);
+            wp_set_object_terms($persona_id, $data['interests'], 'persona_interest', false);
+            $output .= "Created persona: {$title}<br>";
         } else {
-            $user = get_user_by( 'login', $username );
-            $user_ids[ $username ] = $user->ID;
+            $persona_name_to_id[$title] = $persona_post->ID;
+            $output .= "Persona already exists: {$title}<br>";
         }
     }
 
-    // --- 3. Link the Persona to the Users ---
-    $persona_ids_to_assign = array( $persona_id );
-    foreach ( $user_ids as $user_id ) {
-        // Storing as a serialized array of IDs.
-        update_user_meta( $user_id, '_assigned_personas', $persona_ids_to_assign );
+    // --- 2. Create Agent Users ---
+    $output .= '<h2>Creating Agent Users...</h2>';
+    $agent_name_to_id = [];
+    foreach ( $demo_agents as $name => $data ) {
+        if ( ! username_exists( $name ) ) {
+            $user_id = wp_create_user( $name, wp_generate_password(), strtolower($name) . '@persona.local' );
+            wp_update_user(['ID' => $user_id, 'display_name' => $name]);
+            $agent_name_to_id[$name] = $user_id;
+            $output .= "Created user: {$name}<br>";
+        } else {
+            $user = get_user_by('login', $name);
+            $agent_name_to_id[$name] = $user->ID;
+            $output .= "User already exists: {$name}<br>";
+        }
+    }
+
+    // --- 3. Link Personas to Users ---
+    $output .= '<h2>Assigning Personas to Users...</h2>';
+    foreach ( $demo_agents as $name => $data ) {
+        $user_id = $agent_name_to_id[$name];
+        $persona_ids_to_assign = [];
+        foreach ($data['personas'] as $persona_name) {
+            if (isset($persona_name_to_id[$persona_name])) {
+                $persona_ids_to_assign[] = $persona_name_to_id[$persona_name];
+            }
+        }
+        update_user_meta($user_id, '_assigned_personas', $persona_ids_to_assign);
+        $output .= "Assigned " . implode(', ', $data['personas']) . " to {$name}<br>";
     }
 
     // --- 4. Designate a leader ---
-    $leader_id = $user_ids['AIAgent_Bob'];
+    $output .= '<h2>Designating Leader...</h2>';
+    $leader_id = $agent_name_to_id['Ben'];
     update_option( 'ai_group_leader_user_id', $leader_id );
+    $output .= "Set Ben as the AI Group Leader.<br>";
 
-    // --- 5. Mark the setup as complete ---
+    // --- 5. Mark setup as complete ---
     set_transient( 'trm_demo_data_setup_complete', true, YEAR_IN_SECONDS );
-
-    wp_die( 'AI Demo Data Setup Complete! <br/> - Created Persona: ' . esc_html( $persona_post_title ) . ' (ID: ' . (int) $persona_id . ') <br/> - Created/Found Users: AIAgent_Bob, AIAgent_Carl <br/> - Assigned persona to both users. <br/> - Set AIAgent_Bob as the Group Leader.' );
+    $output .= '<h2>Setup Complete!</h2>';
+    wp_die( $output );
 }
 add_action( 'init', 'trm_setup_demo_data' );

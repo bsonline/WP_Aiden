@@ -51,6 +51,26 @@ function aipc_register_settings() {
         'aiden_general_section'
     );
 
+    // Register the setting for the Pollinations API Key
+    register_setting(
+        'aiden_general_settings',
+        'aiden_pollinations_api_key',
+        array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        )
+    );
+
+    // Add the field for the API Key
+    add_settings_field(
+        'aiden_pollinations_api_key_field',
+        __( 'Pollinations.ai API Key', 'ai-persona-core' ),
+        'aipc_render_api_key_field',
+        'aiden-settings-general',
+        'aiden_general_section'
+    );
+
     // Register settings for the 'Triggers' tab
     register_setting(
         'aiden_trigger_settings',
@@ -123,6 +143,20 @@ function aipc_render_trigger_keyword_field() {
     <input type="text" name="aiden_trigger_keyword" id="aiden_trigger_keyword" value="<?php echo esc_attr( $keyword ); ?>" class="regular-text" />
     <p class="description">
         <?php esc_html_e( 'The primary keyword that agents will look for in post content to trigger a reaction.', 'ai-persona-core' ); ?>
+    </p>
+    <?php
+}
+
+/**
+ * Callback function to render the password input field for the Pollinations.ai API Key.
+ */
+function aipc_render_api_key_field() {
+    $api_key = get_option( 'aiden_pollinations_api_key', '' );
+    ?>
+    <input type="password" name="aiden_pollinations_api_key" id="aiden_pollinations_api_key" value="<?php echo esc_attr( $api_key ); ?>" class="regular-text" />
+    <p class="description">
+        <?php esc_html_e( 'Enter your API key for Pollinations.ai to enable AI image generation for agents.', 'ai-persona-core' ); ?>
+        <a href="https://pollinations.ai/" target="_blank"><?php esc_html_e( 'Find your key here.', 'ai-persona-core' ); ?></a>
     </p>
     <?php
 }
