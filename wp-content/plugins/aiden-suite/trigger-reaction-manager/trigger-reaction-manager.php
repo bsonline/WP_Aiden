@@ -70,8 +70,8 @@ function trm_handle_new_comment( $comment_ID, $comment_approved, $commentdata ) 
         return;
     }
 
-    // The keyword to look for. This would eventually come from a Reaction Rule.
-    $keyword = 'Jules';
+    // The keyword to look for. Get it from the settings, with a fallback.
+    $keyword = get_option( 'aiden_trigger_keyword', 'Jules' );
 
     // Check if the trigger condition is met (e.g., keyword in post).
     if ( stripos( $post->post_content, $keyword ) === false ) {
@@ -195,6 +195,115 @@ function trm_leader_arbitrates( $post_id, $comment_id ) {
     }
 }
 add_action( 'trm_suggestions_added', 'trm_leader_arbitrates', 10, 2 );
+
+/**
+ * ===================================================================
+ * Manual Post Trigger
+ * ===================================================================
+ */
+
+/**
+ * Register the meta box on the post editor screen.
+ */
+function trm_add_manual_trigger_meta_box() {
+    add_meta_box(
+        'aiden_manual_trigger_meta_box',
+        __( 'AiDen Manual Trigger', 'trigger-reaction-manager' ),
+        'trm_render_manual_trigger_meta_box',
+        'post',
+        'side',
+        'high'
+    );
+}
+add_action( 'add_meta_boxes', 'trm_add_manual_trigger_meta_box' );
+
+/**
+ * Render the HTML content for the manual trigger meta box.
+ *
+ * @param WP_Post $post The post object.
+ */
+function trm_render_manual_trigger_meta_box( $post ) {
+    // Add a nonce field for security.
+    wp_nonce_field( 'aiden_manual_trigger_save', 'aiden_manual_trigger_nonce' );
+
+    $users_with_personas = get_users( array( 'meta_key' => '_assigned_personas', 'fields' => array( 'ID', 'display_name' ) ) );
+
+    if ( empty( $users_with_personas ) ) {
+        echo '<p>' . esc_html__( 'No AI agents with assigned personas found.', 'trigger-reaction-manager' ) . '</p>';
+        return;
+    }
+    ?>
+    <p>
+        <label for="aiden_manual_trigger_user_id"><?php esc_html_e( 'Force a reaction from a specific agent:', 'trigger-reaction-manager' ); ?></label>
+    </p>
+    <select name="aiden_manual_trigger_user_id" id="aiden_manual_trigger_user_id" style="width:100%;">
+        <option value="0"><?php esc_html_e( '— Select an Agent —', 'trigger-reaction-manager' ); ?></option>
+        <?php foreach ( $users_with_personas as $user ) : ?>
+            <option value="<?php echo esc_attr( $user->ID ); ?>">
+                <?php echo esc_html( $user->display_name ); ?>
+            </option>
+        <?php endforeach; ?>
+    </select>
+    <p class="description">
+        <?php esc_html_e( 'When you save/update the post, a reaction will be queued for the selected agent. The AI Leader will then arbitrate.', 'trigger-reaction-manager' ); ?>
+    </p>
+    <?php
+}
+
+/**
+ * Handle the manual trigger when a post is saved.
+ *
+ * @param int $post_id The ID of the post being saved.
+ */
+function trm_handle_manual_trigger_on_save( $post_id ) {
+    // --- Security Checks ---
+    if ( ! isset( $_POST['aiden_manual_trigger_nonce'] ) || ! wp_verify_nonce( $_POST['aiden_manual_trigger_nonce'], 'aiden_manual_trigger_save' ) ) {
+        return;
+    }
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        return;
+    }
+    if ( wp_is_post_revision( $post_id ) ) {
+        return;
+    }
+
+    // --- Get the selected user ID ---
+    $user_to_trigger = isset( $_POST['aiden_manual_trigger_user_id'] ) ? absint( $_POST['aiden_manual_trigger_user_id'] ) : 0;
+
+    if ( ! $user_to_trigger ) {
+        return; // No user was selected.
+    }
+
+    // --- Queue the suggestion ---
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'ai_reaction_queue';
+    $post_title = get_the_title( $post_id );
+    $user = get_user_by( 'id', $user_to_trigger );
+
+    $suggested_content = "Hey {$user->display_name}, you were manually asked to respond to the post '{$post_title}'. What are your thoughts?";
+
+    $wpdb->insert(
+        $table_name,
+        array(
+            'user_id'            => $user_to_trigger,
+            'trigger_post_id'    => $post_id,
+            'trigger_comment_id' => 0, // 0 indicates a post trigger, not a comment trigger.
+            'suggested_content'  => $suggested_content,
+            'status'             => 'pending',
+            'created_at'         => current_time( 'mysql', 1 ),
+            'updated_at'         => current_time( 'mysql', 1 ),
+        ),
+        array( '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
+    );
+
+    // --- Trigger arbitration ---
+    // We pass 0 as the comment ID to signify this was not a comment-based trigger.
+    do_action( 'trm_suggestions_added', $post_id, 0 );
+}
+add_action( 'save_post', 'trm_handle_manual_trigger_on_save' );
 
 /**
  * A one-time setup function to create demo data for the AI agent system.

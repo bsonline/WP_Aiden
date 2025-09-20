@@ -50,6 +50,32 @@ function aipc_register_settings() {
         'aiden-settings-general',
         'aiden_general_section'
     );
+
+    // Register settings for the 'Triggers' tab
+    register_setting(
+        'aiden_trigger_settings',
+        'aiden_trigger_keyword',
+        array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => 'Jules',
+        )
+    );
+
+    add_settings_section(
+        'aiden_trigger_section',
+        __( 'Keyword Trigger Settings', 'ai-persona-core' ),
+        'aipc_render_trigger_section_callback',
+        'aiden-settings-triggers'
+    );
+
+    add_settings_field(
+        'aiden_trigger_keyword_field',
+        __( 'Trigger Keyword', 'ai-persona-core' ),
+        'aipc_render_trigger_keyword_field',
+        'aiden-settings-triggers',
+        'aiden_trigger_section'
+    );
 }
 add_action( 'admin_init', 'aipc_register_settings' );
 
@@ -77,6 +103,26 @@ function aipc_render_leader_select_field() {
     </select>
     <p class="description">
         <?php esc_html_e( 'Select the user account that will act as the AI Group Leader. The leader arbitrates which agent gets to respond to a trigger.', 'ai-persona-core' ); ?>
+    </p>
+    <?php
+}
+
+/**
+ * Callback function to render the introductory text for the trigger settings section.
+ */
+function aipc_render_trigger_section_callback() {
+    echo '<p>' . esc_html__( 'Configure the conditions that trigger an AI agent reaction.', 'ai-persona-core' ) . '</p>';
+}
+
+/**
+ * Callback function to render the text input field for the trigger keyword.
+ */
+function aipc_render_trigger_keyword_field() {
+    $keyword = get_option( 'aiden_trigger_keyword', 'Jules' );
+    ?>
+    <input type="text" name="aiden_trigger_keyword" id="aiden_trigger_keyword" value="<?php echo esc_attr( $keyword ); ?>" class="regular-text" />
+    <p class="description">
+        <?php esc_html_e( 'The primary keyword that agents will look for in post content to trigger a reaction.', 'ai-persona-core' ); ?>
     </p>
     <?php
 }
@@ -305,26 +351,85 @@ function aipc_add_admin_menu() {
 add_action( 'admin_menu', 'aipc_add_admin_menu' );
 
 /**
- * Render the HTML for the AiDen settings page, including tab navigation.
+ * Render the HTML for the AiDen settings page, including the Dashboard and settings tabs.
  */
 function aipc_render_settings_page() {
     ?>
     <div class="wrap">
-        <h1><?php esc_html_e( 'AiDen Suite Settings', 'ai-persona-core' ); ?></h1>
-        <p><?php esc_html_e( 'Welcome to the control panel for your autonomous AI agent ecosystem.', 'ai-persona-core' ); ?></p>
+        <h1><?php esc_html_e( 'AiDen Suite', 'ai-persona-core' ); ?></h1>
+        <p><?php esc_html_e( 'This is the control panel for your autonomous AI agent ecosystem.', 'ai-persona-core' ); ?></p>
 
         <?php
-        // Basic tab navigation
-        $active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'general_settings';
+        // Tab navigation
+        $active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'dashboard';
         ?>
 
         <h2 class="nav-tab-wrapper">
-            <a href="?page=aiden-settings&tab=general_settings" class="nav-tab <?php echo $active_tab == 'general_settings' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'General', 'ai-persona-core' ); ?></a>
+            <a href="?page=aiden-settings&tab=dashboard" class="nav-tab <?php echo $active_tab == 'dashboard' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'Dashboard', 'ai-persona-core' ); ?></a>
+            <a href="?page=aiden-settings&tab=general_settings" class="nav-tab <?php echo $active_tab == 'general_settings' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'General Settings', 'ai-persona-core' ); ?></a>
             <a href="?page=aiden-settings&tab=triggers" class="nav-tab <?php echo $active_tab == 'triggers' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e( 'Triggers & Reactions', 'ai-persona-core' ); ?></a>
         </h2>
 
-        <form action="options.php" method="post">
-            <?php
+        <?php
+        if ( $active_tab == 'dashboard' ) {
+            // --- Dashboard Content ---
+            echo '<h2>' . esc_html__( 'Activity Dashboard', 'ai-persona-core' ) . '</h2>';
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'ai_reaction_queue';
+
+            $pending_reactions = $wpdb->get_results( $wpdb->prepare(
+                "SELECT * FROM {$table_name} WHERE status = %s ORDER BY created_at DESC LIMIT 10",
+                'pending'
+            ) );
+
+            $recent_activity = $wpdb->get_results( $wpdb->prepare(
+                "SELECT * FROM {$table_name} WHERE status IN (%s, %s) ORDER BY updated_at DESC LIMIT 10",
+                'posted', 'rejected'
+            ) );
+
+            echo '<h3>' . esc_html__( 'Pending Reactions (What is next)', 'ai-persona-core' ) . '</h3>';
+            if ( ! empty( $pending_reactions ) ) {
+                echo '<table class="widefat striped fixed">';
+                echo '<thead><tr><th style="width:15%">Agent</th><th style="width:50%">Suggestion</th><th style="width:20%">Trigger Post</th><th style="width:15%">Queued</th></tr></thead>';
+                echo '<tbody>';
+                foreach ( $pending_reactions as $reaction ) {
+                    $user_info = get_userdata( $reaction->user_id );
+                    $post_title = get_the_title( $reaction->trigger_post_id );
+                    echo '<tr>';
+                    echo '<td>' . esc_html( $user_info ? $user_info->display_name : 'Unknown User' ) . '</td>';
+                    echo '<td><em>' . esc_html( wp_trim_words( $reaction->suggested_content, 15, '...' ) ) . '</em></td>';
+                    echo '<td><a href="' . get_edit_post_link( $reaction->trigger_post_id ) . '">' . esc_html( $post_title ) . '</a></td>';
+                    echo '<td>' . esc_html( $reaction->created_at ) . '</td>';
+                    echo '</tr>';
+                }
+                echo '</tbody></table>';
+            } else {
+                echo '<p>' . esc_html__( 'No pending reactions in the queue.', 'ai-persona-core' ) . '</p>';
+            }
+
+            echo '<hr style="margin: 20px 0;"><h3>' . esc_html__( 'Recent Activity (What has happened)', 'ai-persona-core' ) . '</h3>';
+
+            if ( ! empty( $recent_activity ) ) {
+                echo '<table class="widefat striped fixed">';
+                echo '<thead><tr><th style="width:15%">Agent</th><th style="width:50%">Suggestion</th><th style="width:15%">Status</th><th style="width:20%">Processed</th></tr></thead>';
+                echo '<tbody>';
+                foreach ( $recent_activity as $reaction ) {
+                     $user_info = get_userdata( $reaction->user_id );
+                    echo '<tr>';
+                    echo '<td>' . esc_html( $user_info ? $user_info->display_name : 'Unknown User' ) . '</td>';
+                    echo '<td><em>' . esc_html( wp_trim_words( $reaction->suggested_content, 15, '...' ) ) . '</em></td>';
+                    echo '<td><span style="font-weight:bold; color:' . ($reaction->status == 'posted' ? 'green' : '#a00') . ';">' . esc_html( ucfirst( $reaction->status ) ) . '</span></td>';
+                    echo '<td>' . esc_html( $reaction->updated_at ) . '</td>';
+                    echo '</tr>';
+                }
+                echo '</tbody></table>';
+            } else {
+                echo '<p>' . esc_html__( 'No recent activity found.', 'ai-persona-core' ) . '</p>';
+            }
+
+        } else {
+            // --- Settings Form for other tabs ---
+            echo '<form action="options.php" method="post">';
             if ( $active_tab == 'general_settings' ) {
                 settings_fields( 'aiden_general_settings' );
                 do_settings_sections( 'aiden-settings-general' );
@@ -332,12 +437,10 @@ function aipc_render_settings_page() {
                 settings_fields( 'aiden_trigger_settings' );
                 do_settings_sections( 'aiden-settings-triggers' );
             }
-
-            // Only show the submit button on tabs that have settings.
-            // In the future, we can add more complex conditions here.
             submit_button( 'Save Settings' );
-            ?>
-        </form>
+            echo '</form>';
+        }
+        ?>
     </div>
     <?php
 }
