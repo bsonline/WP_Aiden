@@ -327,7 +327,7 @@ function aipc_register_persona_post_type() {
         'public'             => true,
         'publicly_queryable' => true,
         'show_ui'            => true,
-        'show_in_menu'       => true,
+        'show_in_menu'       => 'aiden-settings',
         'query_var'          => true,
         'rewrite'            => array( 'slug' => 'persona' ),
         'capability_type'    => 'post',
@@ -368,6 +368,7 @@ function aipc_register_agent_cpt() {
         'public'             => false,
         'show_ui'            => true,
         'show_in_menu'       => 'aiden-settings',
+        'menu_icon'          => 'dashicons-groups',
         'query_var'          => false,
         'rewrite'            => false,
         'capability_type'    => 'post',
@@ -461,6 +462,17 @@ function aipc_add_admin_menu() {
         'dashicons-brain', // A fitting icon for an AI suite
         25 // Position in the menu
     );
+
+    // Add a submenu page for the dashboard. Using the parent slug for the menu slug makes
+    // the top-level menu link point to this page.
+    add_submenu_page(
+        'aiden-settings',
+        __( 'Dashboard', 'ai-persona-core' ),
+        __( 'Dashboard', 'ai-persona-core' ),
+        'manage_options',
+        'aiden-settings',
+        'aipc_render_settings_page'
+    );
 }
 add_action( 'admin_menu', 'aipc_add_admin_menu' );
 
@@ -495,7 +507,21 @@ function aipc_render_settings_page() {
         <?php
         if ( $active_tab == 'dashboard' ) {
             // --- Dashboard Content ---
-            echo '<h2>' . esc_html__( 'Activity Dashboard', 'ai-persona-core' ) . '</h2>';
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'ai_reaction_queue';
+
+            // --- At a Glance Section ---
+            $num_agents = wp_count_posts('aiden_agent')->publish;
+            $num_personas = wp_count_posts('ai_persona')->publish;
+            $num_pending = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table_name} WHERE status = %s", 'pending' ) );
+
+            echo '<h3>' . esc_html__( 'At a Glance', 'ai-persona-core' ) . '</h3>';
+            echo '<div class="main-stats" style="display: flex; gap: 20px; margin-bottom: 20px; padding: 10px; background: #fff; border: 1px solid #c3c4c7;">';
+            echo '<div class="stat-box" style="text-align: center;"><h2>' . (int)$num_agents . '</h2>' . esc_html__( 'Agents', 'ai-persona-core' ) . '</div>';
+            echo '<div class="stat-box" style="margin-left: 20px; padding-left: 20px; border-left: 1px solid #ddd; text-align: center;"><h2>' . (int)$num_personas . '</h2>' . esc_html__( 'Personas', 'ai-persona-core' ) . '</div>';
+            echo '<div class="stat-box" style="margin-left: 20px; padding-left: 20px; border-left: 1px solid #ddd; text-align: center;"><h2>' . (int)$num_pending . '</h2>' . esc_html__( 'Pending Reactions', 'ai-persona-core' ) . '</div>';
+            echo '</div>';
+
 
             // Button for setting up demo data
             if ( ! get_transient( 'trm_demo_data_setup_complete' ) ) {
