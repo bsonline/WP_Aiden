@@ -27,6 +27,12 @@ if ( ! defined( 'AIDEN_SUITE_PATH' ) ) {
 require_once AIDEN_SUITE_PATH . 'ai-persona-core/ai-persona-core.php';
 require_once AIDEN_SUITE_PATH . 'trigger-reaction-manager/trigger-reaction-manager.php';
 
+// Load the GitHub Updater class and instantiate it only in the admin area.
+if ( is_admin() ) {
+    require_once AIDEN_SUITE_PATH . 'updater.php';
+    new AiDen_GitHub_Updater();
+}
+
 /**
  * Create the custom database table for the reaction queue upon plugin activation.
  *

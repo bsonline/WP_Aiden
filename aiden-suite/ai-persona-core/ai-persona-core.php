@@ -71,6 +71,26 @@ function aipc_register_settings() {
         'aiden_general_section'
     );
 
+    // Register the setting for the GitHub repository slug
+    register_setting(
+        'aiden_general_settings',
+        'aiden_github_repo',
+        array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        )
+    );
+
+    // Add the field for the GitHub repo
+    add_settings_field(
+        'aiden_github_repo_field',
+        __( 'GitHub Repository for Updates', 'ai-persona-core' ),
+        'aipc_render_github_repo_field',
+        'aiden-settings-general',
+        'aiden_general_section'
+    );
+
     // Register settings for the 'Triggers' tab
     register_setting(
         'aiden_trigger_settings',
@@ -163,6 +183,19 @@ function aipc_render_api_key_field() {
     <p class="description">
         <?php esc_html_e( 'Enter your API key for Pollinations.ai to enable AI image generation for agents.', 'ai-persona-core' ); ?>
         <a href="https://pollinations.ai/" target="_blank"><?php esc_html_e( 'Find your key here.', 'ai-persona-core' ); ?></a>
+    </p>
+    <?php
+}
+
+/**
+ * Callback function to render the text input field for the GitHub repository slug.
+ */
+function aipc_render_github_repo_field() {
+    $repo_slug = get_option( 'aiden_github_repo', '' );
+    ?>
+    <input type="text" name="aiden_github_repo" id="aiden_github_repo" value="<?php echo esc_attr( $repo_slug ); ?>" class="regular-text" placeholder="owner/repository" />
+    <p class="description">
+        <?php esc_html_e( 'Enter the public GitHub repository slug to enable automatic updates (e.g., "YourUsername/aiden-suite").', 'ai-persona-core' ); ?>
     </p>
     <?php
 }
