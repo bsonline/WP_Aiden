@@ -111,18 +111,24 @@ function aipc_render_general_section_callback() {
  */
 function aipc_render_leader_select_field() {
     $current_leader_id = get_option( 'ai_group_leader_user_id', 0 );
-    $all_users = get_users();
+    $all_agents = get_posts( array(
+        'post_type'      => 'aiden_agent',
+        'posts_per_page' => -1,
+        'post_status'    => 'publish',
+    ) );
     ?>
     <select name="ai_group_leader_user_id" id="ai_group_leader_user_id" class="postform">
         <option value="0" <?php selected( $current_leader_id, 0 ); ?>><?php esc_html_e( '— None (Autonomous Posting Disabled) —', 'ai-persona-core' ); ?></option>
-        <?php foreach ( $all_users as $user ) : ?>
-            <option value="<?php echo esc_attr( $user->ID ); ?>" <?php selected( $current_leader_id, $user->ID ); ?>>
-                <?php echo esc_html( $user->display_name ); ?> (<?php echo esc_html( $user->user_login ); ?>)
-            </option>
-        <?php endforeach; ?>
+        <?php if ( ! empty( $all_agents ) ) : ?>
+            <?php foreach ( $all_agents as $agent ) : ?>
+                <option value="<?php echo esc_attr( $agent->ID ); ?>" <?php selected( $current_leader_id, $agent->ID ); ?>>
+                    <?php echo esc_html( $agent->post_title ); ?>
+                </option>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </select>
     <p class="description">
-        <?php esc_html_e( 'Select the user account that will act as the AI Group Leader. The leader arbitrates which agent gets to respond to a trigger.', 'ai-persona-core' ); ?>
+        <?php esc_html_e( 'Select the Agent that will act as the AI Group Leader. The leader arbitrates which agent gets to respond to a trigger.', 'ai-persona-core' ); ?>
     </p>
     <?php
 }
@@ -163,20 +169,32 @@ function aipc_render_api_key_field() {
 
 /**
  * ===================================================================
- * Persona Assignment on User Profile
+ * Agent to Persona Linking
  * ===================================================================
  */
 
 /**
- * Display the UI for assigning personas on the user profile edit screen.
- *
- * @param WP_User $user The user object being edited.
+ * Register the meta box for assigning personas to an agent.
  */
-function aipc_show_persona_assignment_ui( $user ) {
-    // A security check to ensure the current user can edit the target user.
-    if ( ! current_user_can( 'edit_user', $user->ID ) ) {
-        return;
-    }
+function aipc_add_agent_meta_boxes() {
+    add_meta_box(
+        'aiden_persona_assignment_meta_box',
+        __( 'Assigned Personas', 'ai-persona-core' ),
+        'aipc_render_persona_assignment_meta_box',
+        'aiden_agent',
+        'side',
+        'high'
+    );
+}
+add_action( 'add_meta_boxes', 'aipc_add_agent_meta_boxes' );
+
+/**
+ * Render the HTML content for the persona assignment meta box.
+ *
+ * @param WP_Post $post The post object for the current agent.
+ */
+function aipc_render_persona_assignment_meta_box( $post ) {
+    wp_nonce_field( 'aiden_agent_persona_save', 'aiden_agent_persona_nonce' );
 
     $all_personas = get_posts( array(
         'post_type'      => 'ai_persona',
@@ -186,67 +204,59 @@ function aipc_show_persona_assignment_ui( $user ) {
         'order'          => 'ASC',
     ) );
 
-    // Don't show the section if there are no personas to assign.
     if ( empty( $all_personas ) ) {
+        echo '<p>' . esc_html__( 'No personas found. Please create some first.', 'ai-persona-core' ) . '</p>';
         return;
     }
 
-    $assigned_persona_ids = get_user_meta( $user->ID, '_assigned_personas', true );
+    $assigned_persona_ids = get_post_meta( $post->ID, '_assigned_personas', true );
     if ( ! is_array( $assigned_persona_ids ) ) {
         $assigned_persona_ids = array();
     }
-    ?>
-    <h2><?php esc_html_e( 'AiDen Personas', 'ai-persona-core' ); ?></h2>
-    <table class="form-table" role="presentation">
-        <tr>
-            <th><label for="assigned_personas"><?php esc_html_e( 'Assigned Personas', 'ai-persona-core' ); ?></label></th>
-            <td>
-                <fieldset>
-                    <legend class="screen-reader-text"><span><?php esc_html_e( 'Assigned Personas', 'ai-persona-core' ); ?></span></legend>
-                    <?php foreach ( $all_personas as $persona ) : ?>
-                        <label for="persona-<?php echo esc_attr( $persona->ID ); ?>">
-                            <input
-                                type="checkbox"
-                                name="assigned_personas[]"
-                                id="persona-<?php echo esc_attr( $persona->ID ); ?>"
-                                value="<?php echo esc_attr( $persona->ID ); ?>"
-                                <?php checked( in_array( $persona->ID, $assigned_persona_ids ) ); ?>
-                            />
-                            <?php echo esc_html( $persona->post_title ); ?>
-                        </label><br />
-                    <?php endforeach; ?>
-                </fieldset>
-                <p class="description"><?php esc_html_e( 'Assign one or more personas to this user. This determines the agent\'s behavioral archetypes.', 'ai-persona-core' ); ?></p>
-            </td>
-        </tr>
-    </table>
-    <?php
+
+    echo '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 5px;">';
+    foreach ( $all_personas as $persona ) {
+        ?>
+        <label for="persona-<?php echo esc_attr( $persona->ID ); ?>" style="display: block;">
+            <input
+                type="checkbox"
+                name="assigned_personas[]"
+                id="persona-<?php echo esc_attr( $persona->ID ); ?>"
+                value="<?php echo esc_attr( $persona->ID ); ?>"
+                <?php checked( in_array( $persona->ID, $assigned_persona_ids ) ); ?>
+            />
+            <?php echo esc_html( $persona->post_title ); ?>
+        </label>
+        <?php
+    }
+    echo '</div>';
+    echo '<p class="description">' . esc_html__( 'Select one or more personas for this agent.', 'ai-persona-core' ) . '</p>';
 }
-add_action( 'show_user_profile', 'aipc_show_persona_assignment_ui' );
-add_action( 'edit_user_profile', 'aipc_show_persona_assignment_ui' );
 
 /**
- * Save the assigned persona data when a user profile is updated.
+ * Save the persona assignment data from the meta box.
  *
- * @param int $user_id The ID of the user being updated.
+ * @param int $post_id The ID of the post being saved.
  */
-function aipc_save_persona_assignment( $user_id ) {
-    // Security check to ensure the current user has the necessary permissions.
-    if ( ! current_user_can( 'edit_user', $user_id ) ) {
+function aipc_save_agent_meta_box_data( $post_id ) {
+    if ( ! isset( $_POST['aiden_agent_persona_nonce'] ) || ! wp_verify_nonce( $_POST['aiden_agent_persona_nonce'], 'aiden_agent_persona_save' ) ) {
+        return;
+    }
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
         return;
     }
 
     if ( isset( $_POST['assigned_personas'] ) && is_array( $_POST['assigned_personas'] ) ) {
-        // Sanitize the input to ensure we only have an array of integers.
         $sanitized_personas = array_map( 'absint', $_POST['assigned_personas'] );
-        update_user_meta( $user_id, '_assigned_personas', $sanitized_personas );
+        update_post_meta( $post_id, '_assigned_personas', $sanitized_personas );
     } else {
-        // If no personas were checked, this means we should remove all assignments.
-        delete_user_meta( $user_id, '_assigned_personas' );
+        delete_post_meta( $post_id, '_assigned_personas' );
     }
 }
-add_action( 'personal_options_update', 'aipc_save_persona_assignment' );
-add_action( 'edit_user_profile_update', 'aipc_save_persona_assignment' );
+add_action( 'save_post_aiden_agent', 'aipc_save_agent_meta_box_data' );
 
 /**
  * Register the 'ai_persona' custom post type.
@@ -300,6 +310,43 @@ function aipc_register_persona_post_type() {
 }
 add_action( 'init', 'aipc_register_persona_post_type' );
 
+/**
+ * Register the 'aiden_agent' custom post type.
+ */
+function aipc_register_agent_cpt() {
+    $labels = array(
+        'name'                  => _x( 'Agents', 'Post type general name', 'ai-persona-core' ),
+        'singular_name'         => _x( 'Agent', 'Post type singular name', 'ai-persona-core' ),
+        'menu_name'             => _x( 'Agents', 'Admin Menu text', 'ai-persona-core' ),
+        'name_admin_bar'        => _x( 'Agent', 'Add New on Toolbar', 'ai-persona-core' ),
+        'add_new'               => __( 'Add New', 'ai-persona-core' ),
+        'add_new_item'          => __( 'Add New Agent', 'ai-persona-core' ),
+        'new_item'              => __( 'New Agent', 'ai-persona-core' ),
+        'edit_item'             => __( 'Edit Agent', 'ai-persona-core' ),
+        'view_item'             => __( 'View Agent', 'ai-persona-core' ),
+        'all_items'             => __( 'All Agents', 'ai-persona-core' ),
+        'search_items'          => __( 'Search Agents', 'ai-persona-core' ),
+        'not_found'             => __( 'No agents found.', 'ai-persona-core' ),
+        'not_found_in_trash'    => __( 'No agents found in Trash.', 'ai-persona-core' ),
+    );
+
+    $args = array(
+        'labels'             => $labels,
+        'public'             => false,
+        'show_ui'            => true,
+        'show_in_menu'       => 'aiden-settings',
+        'query_var'          => false,
+        'rewrite'            => false,
+        'capability_type'    => 'post',
+        'has_archive'        => false,
+        'hierarchical'       => false,
+        'supports'           => array( 'title', 'editor', 'custom-fields' ),
+        'show_in_rest'       => true,
+    );
+
+    register_post_type( 'aiden_agent', $args );
+}
+add_action( 'init', 'aipc_register_agent_cpt' );
 
 /**
  * Register custom taxonomies for the 'ai_persona' post type.
@@ -449,10 +496,10 @@ function aipc_render_settings_page() {
                 echo '<thead><tr><th style="width:15%">Agent</th><th style="width:50%">Suggestion</th><th style="width:20%">Trigger Post</th><th style="width:15%">Queued</th></tr></thead>';
                 echo '<tbody>';
                 foreach ( $pending_reactions as $reaction ) {
-                    $user_info = get_userdata( $reaction->user_id );
+                    $agent_name = get_the_title( $reaction->user_id );
                     $post_title = get_the_title( $reaction->trigger_post_id );
                     echo '<tr>';
-                    echo '<td>' . esc_html( $user_info ? $user_info->display_name : 'Unknown User' ) . '</td>';
+                    echo '<td>' . esc_html( $agent_name ? $agent_name : 'Unknown Agent' ) . '</td>';
                     echo '<td><em>' . esc_html( wp_trim_words( $reaction->suggested_content, 15, '...' ) ) . '</em></td>';
                     echo '<td><a href="' . get_edit_post_link( $reaction->trigger_post_id ) . '">' . esc_html( $post_title ) . '</a></td>';
                     echo '<td>' . esc_html( $reaction->created_at ) . '</td>';
@@ -470,9 +517,9 @@ function aipc_render_settings_page() {
                 echo '<thead><tr><th style="width:15%">Agent</th><th style="width:50%">Suggestion</th><th style="width:15%">Status</th><th style="width:20%">Processed</th></tr></thead>';
                 echo '<tbody>';
                 foreach ( $recent_activity as $reaction ) {
-                     $user_info = get_userdata( $reaction->user_id );
+                    $agent_name = get_the_title( $reaction->user_id );
                     echo '<tr>';
-                    echo '<td>' . esc_html( $user_info ? $user_info->display_name : 'Unknown User' ) . '</td>';
+                    echo '<td>' . esc_html( $agent_name ? $agent_name : 'Unknown Agent' ) . '</td>';
                     echo '<td><em>' . esc_html( wp_trim_words( $reaction->suggested_content, 15, '...' ) ) . '</em></td>';
                     echo '<td><span style="font-weight:bold; color:' . ($reaction->status == 'posted' ? 'green' : '#a00') . ';">' . esc_html( ucfirst( $reaction->status ) ) . '</span></td>';
                     echo '<td>' . esc_html( $reaction->updated_at ) . '</td>';
