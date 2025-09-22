@@ -62,3 +62,51 @@ function aiden_suite_create_db_table() {
     dbDelta( $sql );
 }
 register_activation_hook( __FILE__, 'aiden_suite_create_db_table' );
+
+/**
+ * ===================================================================
+ * Proactive Posting Cron Scheduling
+ * ===================================================================
+ */
+
+// Define the custom cron hook name for our proactive posting event.
+define( 'AIDEN_PROACTIVE_POST_HOOK', 'aiden_proactive_post_trigger' );
+
+/**
+ * Add a custom two-hour cron schedule to WordPress.
+ *
+ * @param array $schedules An array of non-default cron schedules.
+ * @return array The modified schedules array.
+ */
+function aiden_suite_add_cron_schedules( $schedules ) {
+    $schedules['every_two_hours'] = array(
+        'interval' => 7200, // 2 hours in seconds
+        'display'  => __( 'Every Two Hours' ),
+    );
+    return $schedules;
+}
+add_filter( 'cron_schedules', 'aiden_suite_add_cron_schedules' );
+
+/**
+ * Schedule the cron event upon plugin activation if it's not already scheduled.
+ */
+function aiden_suite_schedule_cron() {
+    if ( ! wp_next_scheduled( AIDEN_PROACTIVE_POST_HOOK ) ) {
+        // Schedule the event to run at the custom two-hour interval.
+        wp_schedule_event( time(), 'every_two_hours', AIDEN_PROACTIVE_POST_HOOK );
+    }
+}
+// We also hook our DB table creation to the same activation hook.
+register_activation_hook( __FILE__, 'aiden_suite_schedule_cron' );
+
+
+/**
+ * Unschedule the cron event upon plugin deactivation for clean removal.
+ */
+function aiden_suite_unschedule_cron() {
+    $timestamp = wp_next_scheduled( AIDEN_PROACTIVE_POST_HOOK );
+    if ( $timestamp ) {
+        wp_unschedule_event( $timestamp, AIDEN_PROACTIVE_POST_HOOK );
+    }
+}
+register_deactivation_hook( __FILE__, 'aiden_suite_unschedule_cron' );
