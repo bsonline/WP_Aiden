@@ -223,3 +223,114 @@ function trm_setup_demo_data() {
     exit;
 }
 add_action( 'init', 'trm_setup_demo_data', 20 );
+
+/**
+ * ===================================================================
+ * Avatar Generation
+ * ===================================================================
+ */
+
+/**
+ * Handle the 'Generate New Avatar' button submission from the agent editor.
+ */
+function trm_handle_avatar_generation() {
+    // --- Security and Data Validation ---
+    if ( ! isset( $_POST['agent_id'] ) || ! isset( $_POST['aiden_generate_avatar_nonce'] ) ) {
+        wp_die( 'Invalid request.', 'Security Error' );
+    }
+
+    $agent_id = absint( $_POST['agent_id'] );
+
+    if ( ! wp_verify_nonce( $_POST['aiden_generate_avatar_nonce'], 'aiden_generate_avatar_' . $agent_id ) || ! current_user_can( 'edit_post', $agent_id ) ) {
+        wp_die( 'You are not authorized to perform this action.', 'Security Error' );
+    }
+
+    $api_key = get_option( 'aiden_pollinations_api_key' );
+    if ( empty( $api_key ) ) {
+        // Redirect back with an error message to be displayed as an admin notice.
+        wp_safe_redirect( add_query_arg( 'avatar_status', 'no_key', get_edit_post_link( $agent_id, 'raw' ) ) );
+        exit;
+    }
+
+    $agent = get_post( $agent_id );
+    if ( ! $agent || $agent->post_type !== 'aiden_agent' ) {
+        wp_die( 'Invalid agent specified.', 'Error' );
+    }
+
+    // --- Construct the Prompt ---
+    $assigned_persona_ids = get_post_meta( $agent_id, '_assigned_personas', true );
+    $prompt_parts = ['photorealistic portrait of an AI agent named ' . $agent->post_title];
+    if ( ! empty( $agent->post_content ) ) {
+        $prompt_parts[] = $agent->post_content;
+    }
+
+    if ( ! empty( $assigned_persona_ids ) ) {
+        $traits = wp_get_object_terms( $assigned_persona_ids, 'persona_trait', ['fields' => 'names'] );
+        if ( ! is_wp_error( $traits ) && ! empty( $traits ) ) {
+            $prompt_parts[] = 'Their personality traits include: ' . implode( ', ', $traits );
+        }
+        $interests = wp_get_object_terms( $assigned_persona_ids, 'persona_interest', ['fields' => 'names'] );
+        if ( ! is_wp_error( $interests ) && ! empty( $interests ) ) {
+            $prompt_parts[] = 'They are interested in ' . implode( ', ', $interests );
+        }
+    }
+    $prompt = implode( '. ', $prompt_parts );
+
+    // --- Make the API Call ---
+    // NOTE: The exact API endpoint and request format are an educated guess based on common API patterns.
+    // This may need to be adjusted based on the official Pollinations.ai documentation.
+    $api_url = 'https://pollinations.ai/api/v1/image';
+    $response = wp_remote_post( $api_url, [
+        'method'    => 'POST',
+        'headers'   => [
+            'Content-Type'  => 'application/json',
+            'Authorization' => 'Bearer ' . $api_key,
+        ],
+        'body'      => json_encode( [
+            'prompt' => $prompt,
+            'model'  => 'dall-e-3', // A reasonable default for high-quality portraits
+            'width'  => 1024,
+            'height' => 1024,
+        ] ),
+        'timeout'   => 60, // Increased timeout for image generation
+    ] );
+
+    // --- Process the API Response ---
+    if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
+        // API call failed.
+        wp_safe_redirect( add_query_arg( 'avatar_status', 'api_error', get_edit_post_link( $agent_id, 'raw' ) ) );
+        exit;
+    }
+
+    $body = json_decode( wp_remote_retrieve_body( $response ) );
+    // Assuming the image URL is in a property named 'url' or 'output'. This may need adjustment.
+    $image_url = $body->url ?? $body->output ?? '';
+
+    if ( empty( $image_url ) ) {
+        // Could not find image URL in response.
+        wp_safe_redirect( add_query_arg( 'avatar_status', 'url_error', get_edit_post_link( $agent_id, 'raw' ) ) );
+        exit;
+    }
+
+    // We need these files to sideload the image.
+    require_once( ABSPATH . 'wp-admin/includes/media.php' );
+    require_once( ABSPATH . 'wp-admin/includes/file.php' );
+    require_once( ABSPATH . 'wp-admin/includes/image.php' );
+
+    // Sideload the image from the URL to the media library.
+    $attachment_id = media_sideload_image( $image_url, $agent_id, $agent->post_title, 'id' );
+
+    if ( is_wp_error( $attachment_id ) ) {
+        // Image download failed.
+        wp_safe_redirect( add_query_arg( 'avatar_status', 'download_error', get_edit_post_link( $agent_id, 'raw' ) ) );
+        exit;
+    }
+
+    // Set the downloaded image as the agent's featured image (avatar).
+    set_post_thumbnail( $agent_id, $attachment_id );
+
+    // Redirect back with a success message.
+    wp_safe_redirect( add_query_arg( 'avatar_status', 'success', get_edit_post_link( $agent_id, 'raw' ) ) );
+    exit;
+}
+add_action( 'admin_post_aiden_generate_avatar', 'trm_handle_avatar_generation' );
