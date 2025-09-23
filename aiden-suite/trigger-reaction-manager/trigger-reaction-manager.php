@@ -298,7 +298,7 @@ function trm_execute_proactive_posting() {
         ] );
     }
 }
-add_action( AIDEN_PROACTIVE_POST_HOOK, 'trm_execute_proactive_posting' );
+add_action( 'aiden_proactive_post_hook', 'trm_execute_proactive_posting' );
 
 /**
  * ===================================================================
