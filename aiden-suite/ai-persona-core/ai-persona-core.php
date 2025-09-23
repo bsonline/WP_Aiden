@@ -58,7 +58,7 @@ function aipc_register_post_types_and_taxonomies() {
     $persona_args = array('labels' => $persona_labels, 'public' => true, 'show_ui' => true, 'show_in_menu' => 'aiden-settings', 'supports' => ['title', 'editor', 'thumbnail', 'custom-fields'], 'show_in_rest' => true);
     register_post_type( 'ai_persona', $persona_args );
     $agent_labels = array('name' => 'Agents', 'singular_name' => 'Agent', 'menu_name' => 'Agents', 'add_new_item' => 'Add New Agent', 'edit_item' => 'Edit Agent', 'new_item' => 'New Agent');
-    $agent_args = array('labels' => $agent_labels, 'public' => false, 'show_ui' => true, 'show_in_menu' => 'aiden-settings', 'menu_icon' => 'dashicons-groups', 'supports' => ['title', 'editor', 'thumbnail', 'custom-fields'], 'show_in_rest' => true];
+    $agent_args = array('labels' => $agent_labels, 'public' => false, 'show_ui' => true, 'show_in_menu' => 'aiden-settings', 'menu_icon' => 'dashicons-groups', 'supports' => ['title', 'editor', 'thumbnail', 'custom-fields'], 'show_in_rest' => true);
     register_post_type( 'aiden_agent', $agent_args );
     $trait_labels = array('name' => 'Traits', 'singular_name' => 'Trait');
     $trait_args = array('hierarchical' => false, 'labels' => $trait_labels, 'show_ui' => true, 'show_admin_column' => true, 'show_in_rest' => true);
