@@ -179,6 +179,7 @@ function aipc_render_scheduled_posting_field() {
 function aipc_add_agent_meta_boxes() {
     add_meta_box('aiden_persona_assignment_meta_box', 'Assigned Personas', 'aipc_render_persona_assignment_meta_box', 'aiden_agent', 'side', 'high');
     add_meta_box('aiden_avatar_generation_meta_box', __( 'Generate Avatar', 'ai-persona-core' ), 'aipc_render_avatar_generation_meta_box', 'aiden_agent', 'side', 'default');
+    add_meta_box('aiden_manual_post_generation_meta_box', __( 'Generate Post', 'ai-persona-core' ), 'aipc_render_manual_post_generation_meta_box', 'aiden_agent', 'side', 'default');
 }
 add_action( 'add_meta_boxes', 'aipc_add_agent_meta_boxes' );
 
@@ -207,6 +208,25 @@ function aipc_render_avatar_generation_meta_box( $post ) {
         <?php else : ?>
             <p><?php esc_html_e( 'Uses the agent\'s name, description, and assigned persona traits/interests to generate a unique avatar via Pollinations.ai.', 'ai-persona-core' ); ?></p>
             <?php submit_button( __( 'Generate New Avatar', 'ai-persona-core' ), 'primary', 'submit', true ); ?>
+        <?php endif; ?>
+    </form>
+    <?php
+}
+
+function aipc_render_manual_post_generation_meta_box( $post ) {
+    $api_key = get_option( 'aiden_pollinations_api_key' );
+    ?>
+    <form action="<?php echo esc_url( admin_url('admin-post.php') ); ?>" method="post">
+        <input type="hidden" name="action" value="aiden_generate_post">
+        <input type="hidden" name="agent_id" value="<?php echo esc_attr( $post->ID ); ?>">
+        <?php wp_nonce_field( 'aiden_generate_post_' . $post->ID, 'aiden_generate_post_nonce' ); ?>
+
+        <?php if ( empty( $api_key ) ) : ?>
+            <p><?php esc_html_e( 'Please add your Pollinations.ai API key in the Settings to enable this feature.', 'ai-persona-core' ); ?></p>
+            <?php submit_button( __( 'Generate New Post Now', 'ai-persona-core' ), 'primary', 'submit', true, [ 'disabled' => 'disabled' ] ); ?>
+        <?php else : ?>
+            <p><?php esc_html_e( 'Click to have this agent immediately generate and publish a new blog post based on its persona.', 'ai-persona-core' ); ?></p>
+            <?php submit_button( __( 'Generate New Post Now', 'ai-persona-core' ), 'primary', 'submit', true ); ?>
         <?php endif; ?>
     </form>
     <?php
@@ -244,4 +264,20 @@ function aipc_display_avatar_generation_notices() {
     if ( ! empty( $message ) ) { echo '<div class="notice notice-' . esc_attr( $type ) . ' is-dismissible"><p>' . esc_html( $message ) . '</p></div>'; }
 }
 add_action( 'admin_notices', 'aipc_display_avatar_generation_notices' );
+
+function aipc_display_post_generation_notices() {
+    $screen = get_current_screen();
+    if ( ! $screen || $screen->id !== 'aiden_agent' || ! isset( $_GET['post_status'] ) ) return;
+    $status = sanitize_key( $_GET['post_status'] );
+    $message = ''; $type = 'info';
+    switch ( $status ) {
+        case 'success': $message = __( 'New post generated and published successfully!', 'ai-persona-core' ); $type = 'success'; break;
+        case 'no_key': $message = __( 'Error: Pollinations.ai API key is not set.', 'ai-persona-core' ); $type = 'error'; break;
+        case 'api_error': $message = __( 'Error: Could not connect to the API to generate post.', 'ai-persona-core' ); $type = 'error'; break;
+        case 'content_error': $message = __( 'Error: The API response did not contain valid content.', 'ai-persona-core' ); $type = 'error'; break;
+        case 'publish_error': $message = __( 'Error: The generated post could not be published.', 'ai-persona-core' ); $type = 'error'; break;
+    }
+    if ( ! empty( $message ) ) { echo '<div class="notice notice-' . esc_attr( $type ) . ' is-dismissible"><p>' . esc_html( $message ) . '</p></div>'; }
+}
+add_action( 'admin_notices', 'aipc_display_post_generation_notices' );
 ?>
